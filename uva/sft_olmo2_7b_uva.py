@@ -179,7 +179,7 @@ def main():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("cmd", choices=["train", "dry_run"])
+    parser.add_argument("cmd", choices=["train", "dry_run", "prep_data"])
     parser.add_argument("--run_name", default="olmo2-7b-sft-uva-test")
     parser.add_argument(
         "--checkpoint",
@@ -213,7 +213,7 @@ def main():
     parser.add_argument("--world_size", type=int, default=4, help="Only used for dry_run")
     args, overrides = parser.parse_known_args()
 
-    if args.cmd == "dry_run":
+    if args.cmd in ("dry_run", "prep_data"):
         prepare_cli_environment()
     elif os.environ.get("UVA_CPU_TEST"):  # CPU-only smoke test of the code path (no GPU)
         prepare_training_environment(backend="gloo")
@@ -224,7 +224,14 @@ def main():
     if get_local_rank() == 0:
         print(config)
 
-    if args.cmd == "train":
+    if args.cmd == "prep_data":
+        # Single process, no GPU: pack documents into fixed-length instances and cache the result
+        # in <save_folder>/dataset-cache so the torchrun job only reuses it. Fails fast here
+        # instead of leaving the other GPU ranks waiting at a barrier.
+        dataset = config.dataset.build()
+        dataset.prepare()
+        log.info(f"Dataset ready: {len(dataset):,d} instances of {args.seq_len} tokens")
+    elif args.cmd == "train":
         try:
             train(args.checkpoint, config)
         finally:

@@ -32,6 +32,14 @@ export OMP_NUM_THREADS=4
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export NCCL_DEBUG=WARN
 
+COMMON=(--run_name="$RUN_NAME" --checkpoint="$OLMO_CKPT/model_and_optim" --dataset_path="$SFT_DATA"
+        --save_folder="$RUNS_DIR/$RUN_NAME" --seq_len=4096)
+
+# Pack the SFT data into 4096-token instances in ONE process first (cached in save_folder).
+# If this fails, the job stops here in seconds instead of hanging the GPU ranks at a barrier.
+echo "== packing data (single process)"
+python uva/sft_olmo2_7b_uva.py prep_data "${COMMON[@]}"
+
 # shellcheck disable=SC2086
 torchrun --standalone --nproc-per-node="$NGPU" uva/sft_olmo2_7b_uva.py train \
     --run_name="$RUN_NAME" \
