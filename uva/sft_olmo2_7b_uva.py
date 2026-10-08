@@ -166,8 +166,11 @@ def train(checkpoint: str, config: UVASFTConfig):
 
     cast(ConfigSaverCallback, trainer.callbacks["config_saver"]).config = config.as_config_dict()
 
-    log.info(f"Loading base model weights from '{checkpoint}'...")
-    trainer.load_checkpoint(checkpoint, load_trainer_state=False, load_optim_state=False)
+    if checkpoint.lower() == "none":
+        log.warning("No checkpoint given: training from RANDOM init (smoke test only)")
+    else:
+        log.info(f"Loading base model weights from '{checkpoint}'...")
+        trainer.load_checkpoint(checkpoint, load_trainer_state=False, load_optim_state=False)
 
     trainer.fit()
 
@@ -179,7 +182,9 @@ def main():
     parser.add_argument("cmd", choices=["train", "dry_run"])
     parser.add_argument("--run_name", default="olmo2-7b-sft-uva-test")
     parser.add_argument(
-        "--checkpoint", required=True, help="OLMo-core checkpoint dir (…/model_and_optim)"
+        "--checkpoint",
+        required=True,
+        help="OLMo-core checkpoint dir (…/model_and_optim), or 'none' for random init",
     )
     parser.add_argument(
         "--dataset_path", required=True, help="Dir with token_ids_part_*.npy + labels_mask_*.npy"

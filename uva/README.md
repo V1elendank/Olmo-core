@@ -6,6 +6,10 @@ Base model `allenai/OLMo-2-1124-7B`, 5k conversations from `allenai/tulu-3-sft-m
 
 | File | What it does |
 |---|---|
+| `launch_from_mac.sh` | Mac-side launcher: `test` / `status` / `full` |
+| `preflight.sh` | Portal checks before using GPUs |
+| `smoke_test.sbatch` | 2-GPU tiny-model test of the whole stack |
+| `download_on_portal.sh` | Fallback downloads if compute nodes are offline |
 | `env.sh` | Paths (all under `/bigtemp/$USER/olmo`), caches, venv activation |
 | `setup_env.sh` | One-time: uv venv with torch (CUDA wheels) + OLMo-core |
 | `00_prepare.sbatch` | CPU job: download HF model → convert to OLMo-core → tokenize SFT data |
@@ -13,34 +17,36 @@ Base model `allenai/OLMo-2-1124-7B`, 5k conversations from `allenai/tulu-3-sft-m
 | `prep_sft_data.py` | Chat-template tokenization with assistant-only label masks |
 | `sft_olmo2_7b_uva.py` | Beaker-free version of `src/scripts/train/sft/Olmo-2-7B-SFT.py` |
 
-## Run it
+## Run it: test first, then the long jobs
 
-From your Mac, one command does everything below (push branch, clone on cluster, setup, submit):
-
-```bash
-cd ~/Desktop/project/OLMo-core
-bash uva/launch_from_mac.sh <computing-id>          # launch
-bash uva/launch_from_mac.sh <computing-id> status   # later: queue + copy logs to uva/logs/remote/
-```
-
-Or by hand on the cluster:
+From your Mac, in `~/Desktop/project/OLMo-core`:
 
 ```bash
-ssh <computing-id>@portal.cs.virginia.edu
-mkdir -p /bigtemp/$USER && cd /bigtemp/$USER
-git clone <your fork URL> OLMo-core && cd OLMo-core && git checkout uva-cs-finetune
-mkdir -p uva/logs
+# Stage 1: tests, ~30 min. Push, clone, env setup, preflight (portal), then a 2-GPU smoke test
+bash uva/launch_from_mac.sh <computing-id>
+bash uva/launch_from_mac.sh <computing-id> status   # wait for "SMOKE TEST PASSED" in uva/logs/remote/
 
-TORCH_CUDA=cu128 bash uva/setup_env.sh           # ~5-10 min, on the portal node
-jid=$(sbatch --parsable uva/00_prepare.sbatch)   # ~1-2 h (download + convert + tokenize)
-sbatch --dependency=afterok:$jid uva/01_sft.sbatch
-
-squeue -u $USER
-tail -f uva/logs/olmo2-7b-sft-*.out
+# Stage 2: hours. prepare -> 7B fit check (5 steps) -> 7B SFT (30 steps), each gated on the previous
+bash uva/launch_from_mac.sh <computing-id> full
 ```
 
-If compute nodes can't reach Hugging Face, run the three steps from `00_prepare.sbatch` by hand on the portal
-(`source uva/env.sh` first). The conversion step needs ~100 GB RAM, so keep it in a CPU job if you can.
+| Test | Where | Time | Checks |
+|---|---|---|---|
+| `preflight.sh` T1-T7 | portal | 5-10 min | venv imports, /bigtemp writable, 7B config dry run, HF reachable, tokenizer + label masks on 50 convos, compute-node internet, GPU nodes up |
+| `smoke_test.sbatch` | 2 GPUs | ~5 min + queue | driver, CUDA, bf16 matmul per GPU, NCCL/FSDP, full OLMo-core loop on a random-init 190M model |
+| 7B fit check | target GPUs | ~10 min | real 7B weights load, 5 steps fit in memory, throughput |
+
+If preflight T6 warns that compute nodes have no internet, run `bash uva/download_on_portal.sh` on the portal before Stage 2.
+
+By hand on the cluster (same steps):
+
+```bash
+cd /bigtemp/$USER/OLMo-core
+bash uva/setup_env.sh && bash uva/preflight.sh && sbatch uva/smoke_test.sbatch
+jid=$(sbatch --parsable uva/00_prepare.sbatch)
+fit=$(sbatch --parsable --dependency=afterok:$jid --export=ALL,STEPS=5 uva/01_sft.sbatch)
+sbatch --dependency=afterok:$fit uva/01_sft.sbatch
+```
 
 ## What "success" looks like
 
