@@ -136,6 +136,10 @@ def build_config(args: argparse.Namespace, overrides: list[str]) -> UVASFTConfig
                 weight_decay=0.0,
                 betas=(0.9, 0.95),
                 compile=False,
+                # foreach=True updates all params at once and allocates several full-size
+                # temporaries (~15 GB each for 7B on 2 GPUs) -> OOM on 2x H100. Per-param
+                # updates are mathematically identical and need ~1 GB extra.
+                foreach=args.optim_foreach,
             ),
             dp_config=TransformerDataParallelConfig(
                 name=DataParallelType.fsdp,
@@ -260,6 +264,11 @@ def get_parser() -> argparse.ArgumentParser:
         help="Overwritten checkpoint every N steps, so a crashed run resumes instead of restarting",
     )
     parser.add_argument("--max_checkpoints", type=int, default=1)
+    parser.add_argument(
+        "--optim_foreach",
+        action="store_true",
+        help="Faster multi-tensor AdamW; needs ~30-45 GB extra GPU memory for 7B (use on 4+ GPUs)",
+    )
     parser.add_argument(
         "--data_work_dir",
         default=None,
