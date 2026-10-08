@@ -65,7 +65,8 @@ export OMP_NUM_THREADS=4
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export NCCL_DEBUG=WARN
 
-echo "== training (watchdog: ${STALL_MIN:-12} min without output -> kill)"
+echo "== training (watchdog: ${STALL_MIN:-12} min without log output or checkpoint writes -> kill)"
+export WATCH_DIR="$SAVE" # checkpoint saves (~88 GB, silent for minutes) count as progress
 # shellcheck disable=SC2086
 bash uva/run_with_watchdog.sh "$SAVE.train.log" \
     torchrun --standalone --nproc-per-node="$NGPU" uva/sft_olmo2_7b_uva.py train \

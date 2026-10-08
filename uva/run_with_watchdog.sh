@@ -6,7 +6,8 @@
 #
 # Output is written to <logfile> and mirrored to stdout (the Slurm log). If <logfile> gets no
 # new output for STALL_MIN minutes (default 12; or STALL_SEC seconds), the whole process group
-# is terminated and the script exits with code 124.
+# is terminated and the script exits with code 124. If WATCH_DIR is set, files being written
+# under it (e.g. a checkpoint save, which prints nothing for minutes) also count as activity.
 set -uo pipefail
 
 LOG="$1"
@@ -26,7 +27,12 @@ STALLED=0
 while kill -0 "$PID" 2>/dev/null; do
     sleep "$CHECK_SEC"
     kill -0 "$PID" 2>/dev/null || break
-    idle=$(($(date +%s) - $(stat -c %Y "$LOG")))
+    last=$(stat -c %Y "$LOG")
+    if [ -n "${WATCH_DIR:-}" ] && [ -d "$WATCH_DIR" ]; then
+        newest=$(find "$WATCH_DIR" -type f -printf '%T@\n' 2>/dev/null | sort -n | tail -n 1 | cut -d. -f1)
+        [ -n "$newest" ] && [ "$newest" -gt "$last" ] && last=$newest
+    fi
+    idle=$(($(date +%s) - last))
     if [ "$idle" -ge "$STALL_SEC" ]; then
         echo "WATCHDOG: no output for ${idle}s (limit ${STALL_SEC}s); killing the run to free the GPUs" | tee -a "$LOG"
         kill -TERM -- "-$PID" 2>/dev/null
