@@ -27,11 +27,12 @@ echo ">>> Installing torch ($TORCH_CUDA wheels)"
 uv pip install "torch>=2.10.0,<2.14" --index-url "https://download.pytorch.org/whl/$TORCH_CUDA"
 
 echo ">>> Installing OLMo-core (editable) + data/conversion deps"
-uv pip install -e "$OLMO_REPO[transformers]" datasets "huggingface_hub[cli]" jinja2
+uv pip install -e "$OLMO_REPO[transformers]" datasets huggingface_hub jinja2
 
 python - <<'EOF'
-import torch, olmo_core, transformers
+import torch, transformers
+from olmo_core.version import VERSION as OLMO_VERSION
 print("torch", torch.__version__, "| built for CUDA", torch.version.cuda)
-print("olmo_core", olmo_core.__version__, "| transformers", transformers.__version__)
+print("olmo_core", OLMO_VERSION, "| transformers", transformers.__version__)
 EOF
 echo ">>> Done. venv: $OLMO_VENV"

@@ -12,7 +12,7 @@ warn() { echo "WARN  $*"; WARNS=$((WARNS + 1)); }
 fail() { echo "FAIL  $*"; FAILS=$((FAILS + 1)); }
 
 echo "== T1  Python environment"
-if python -c "import torch, olmo_core, transformers, datasets; print('   torch', torch.__version__, 'cuda', torch.version.cuda, '| olmo_core', olmo_core.__version__)"; then
+if python -c "import torch, transformers, datasets; from olmo_core.version import VERSION; print('   torch', torch.__version__, 'cuda', torch.version.cuda, '| olmo_core', VERSION)"; then
     pass "venv imports torch / olmo_core / transformers / datasets"
 else
     fail "venv broken: rerun  bash uva/setup_env.sh"
