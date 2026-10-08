@@ -79,11 +79,14 @@ if ! grep -qs "SMOKE TEST PASSED" uva/logs/olmo-smoke-*.out; then
     echo ">>> No passing smoke test found in uva/logs/. Run stage 1 first (or FORCE=1)."
     [ "${FORCE:-0}" = 1 ] || exit 1
 fi
-j1=\$(sbatch --parsable uva/00_prepare.sbatch)
-j2=\$(sbatch --parsable --dependency=afterok:\$j1 --time=01:00:00 \
-      --export=ALL,STEPS=5,RUN_NAME=olmo2-7b-fitcheck uva/01_sft.sbatch)
-j3=\$(sbatch --parsable --dependency=afterok:\$j2 uva/01_sft.sbatch)
-echo ">>> submitted: prepare \$j1 -> 7B fit check (5 steps) \$j2 -> 7B SFT (30 steps) \$j3"
+GPU="${GPU_ARGS:---gres=gpu:2 --constraint=h100_94gb}"
+MAIL="--mail-type=END,FAIL --mail-user=$ID@virginia.edu"
+j1=\$(sbatch --parsable \$MAIL uva/00_prepare.sbatch)
+j2=\$(sbatch --parsable \$MAIL \$GPU --dependency=afterok:\$j1 --time=00:45:00 \
+      --export=ALL,STEPS=5,RUN_NAME=fit-check uva/01_sft.sbatch)
+j3=\$(sbatch --parsable \$MAIL \$GPU --dependency=afterok:\$j2 \
+      --export=ALL,STEPS=30,CKPT_EVERY=15,RUN_NAME=sft-30step uva/01_sft.sbatch)
+echo ">>> submitted: prepare \$j1 -> 7B fit check (5 steps) \$j2 -> 7B SFT (30 steps, ckpt every 15) \$j3"
 echo ">>> each job only starts if the previous one succeeded"
 squeue -u $ID
 EOF

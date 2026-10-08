@@ -15,6 +15,7 @@ Any extra ``--a.b.c=value`` arguments are applied as config overrides (OLMo-core
 import argparse
 import logging
 import os
+from datetime import timedelta
 from dataclasses import dataclass
 from typing import cast
 
@@ -30,7 +31,7 @@ from olmo_core.data.types import LongDocStrategy
 from olmo_core.distributed.parallel import DataParallelType
 from olmo_core.distributed.utils import get_local_rank, get_world_size
 from olmo_core.nn.attention import AttentionBackendName
-from olmo_core.nn.transformer import TransformerConfig
+from olmo_core.nn.transformer import TransformerBlockType, TransformerConfig
 from olmo_core.optim import LinearWithWarmup, SkipStepAdamWConfig
 from olmo_core.train import (
     Duration,
@@ -40,6 +41,7 @@ from olmo_core.train import (
     teardown_training_environment,
 )
 from olmo_core.train.callbacks import (
+    CheckpointerCallback,
     ConfigSaverCallback,
     GarbageCollectorCallback,
     GPUMemoryMonitorCallback,
@@ -77,7 +79,7 @@ def build_config(args: argparse.Namespace, overrides: list[str]) -> UVASFTConfig
 
     dataset = NumpyPackedFSLDatasetConfig(
         tokenizer=tokenizer_config,
-        work_dir=f"{args.save_folder}/dataset-cache",
+        work_dir=args.data_work_dir or f"{args.save_folder}/dataset-cache",
         paths=[f"{args.dataset_path.rstrip('/')}/token_ids_part_*.npy"],
         expand_glob=True,
         label_mask_paths=[f"{args.dataset_path.rstrip('/')}/labels_mask_*.npy"],
@@ -94,11 +96,25 @@ def build_config(args: argparse.Namespace, overrides: list[str]) -> UVASFTConfig
             f"microbatch_seqs * world_size ({args.microbatch_seqs} * {world_size})"
         )
 
-    model_factory = {"7B": TransformerConfig.olmo2_7B, "190M": TransformerConfig.olmo2_190M}
-    model = model_factory[args.model_size](
-        vocab_size=tokenizer_config.padded_vocab_size(),
-        attn_backend=AttentionBackendName(args.attn_backend),
-    )
+    vocab_size = tokenizer_config.padded_vocab_size()
+    attn_backend = AttentionBackendName(args.attn_backend)
+    if args.model_size == "tiny":  # ~30M params, for CPU tests of the full code path
+        model = TransformerConfig.llama_like(
+            d_model=256,
+            n_layers=2,
+            n_heads=4,
+            vocab_size=vocab_size,
+            hidden_size_multiplier=1.5,
+            block_name=TransformerBlockType.reordered_norm,
+            qk_norm=True,
+            layer_norm_eps=1e-6,
+            attn_backend=attn_backend,
+        )
+    else:
+        model_factory = {"7B": TransformerConfig.olmo2_7B, "190M": TransformerConfig.olmo2_190M}
+        model = model_factory[args.model_size](vocab_size=vocab_size, attn_backend=attn_backend)
+
+    ckpt_enabled = bool(args.save_checkpoints or args.save_interval or args.ephemeral_interval)
 
     config = UVASFTConfig(
         run_name=args.run_name,
@@ -139,14 +155,25 @@ def build_config(args: argparse.Namespace, overrides: list[str]) -> UVASFTConfig
             save_folder=args.save_folder,
             load_strategy=LoadStrategy.never,  # base checkpoint is loaded manually below
             save_overwrite=True,
-            no_checkpoints=not args.save_checkpoints,
+            no_checkpoints=not ckpt_enabled,
             metrics_collect_interval=1,
             cancel_check_interval=10,
             max_duration=Duration.steps(args.steps),
         )
         .with_callback("gpu_monitor", GPUMemoryMonitorCallback())
         .with_callback("config_saver", ConfigSaverCallback())
-        .with_callback("garbage_collector", GarbageCollectorCallback()),
+        .with_callback("garbage_collector", GarbageCollectorCallback())
+        .with_callback(
+            "checkpointer",
+            CheckpointerCallback(
+                enabled=ckpt_enabled,
+                save_interval=args.save_interval,  # permanent checkpoints (None = only final)
+                ephemeral_save_interval=args.ephemeral_interval,  # overwritten, for crash-resume
+                pre_train_checkpoint=False,  # don't re-save the base model at step 0
+                max_checkpoints=args.max_checkpoints,
+                save_async=False,
+            ),
+        ),
     ).merge(overrides)
 
     if os.environ.get("UVA_CPU_TEST"):
@@ -158,6 +185,12 @@ def build_config(args: argparse.Namespace, overrides: list[str]) -> UVASFTConfig
 def train(checkpoint: str, config: UVASFTConfig):
     seed_all(config.init_seed)
 
+    if os.environ.get("UVA_TEST_HANG_SEC"):  # test hook: simulate a stuck job for the watchdog
+        import time
+
+        log.warning("UVA_TEST_HANG_SEC set: sleeping to simulate a hang")
+        time.sleep(float(os.environ["UVA_TEST_HANG_SEC"]))
+
     model = config.model.build(init_device="meta")
     train_module = config.train_module.build(model)
     dataset = config.dataset.build()
@@ -166,7 +199,15 @@ def train(checkpoint: str, config: UVASFTConfig):
 
     cast(ConfigSaverCallback, trainer.callbacks["config_saver"]).config = config.as_config_dict()
 
-    if checkpoint.lower() == "none":
+    # 1) Resume from this run's own latest checkpoint if one exists (e.g. after a crash/timeout).
+    # 2) Otherwise start from the base model (or random init for smoke tests).
+    if config.trainer.callbacks["checkpointer"].enabled and trainer.maybe_load_checkpoint(
+        trainer.save_folder
+    ):
+        log.info(
+            f"RESUMED from checkpoint in '{trainer.save_folder}' at step {trainer.global_step}"
+        )
+    elif checkpoint.lower() == "none":
         log.warning("No checkpoint given: training from RANDOM init (smoke test only)")
     else:
         log.info(f"Loading base model weights from '{checkpoint}'...")
@@ -175,7 +216,7 @@ def train(checkpoint: str, config: UVASFTConfig):
     trainer.fit()
 
 
-def main():
+def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -205,20 +246,53 @@ def main():
         "--full_ac", action="store_true", help="Full activation checkpointing (less memory)"
     )
     parser.add_argument(
-        "--save_checkpoints", action="store_true", help="Save checkpoints (~120GB each w/ optim)"
+        "--save_checkpoints",
+        action="store_true",
+        help="Save a final checkpoint (7B: ~88GB with optimizer state)",
     )
     parser.add_argument(
-        "--model_size", default="7B", choices=["7B", "190M"], help="190M = tiny smoke test"
+        "--save_interval", type=int, default=None, help="Permanent checkpoint every N steps"
+    )
+    parser.add_argument(
+        "--ephemeral_interval",
+        type=int,
+        default=None,
+        help="Overwritten checkpoint every N steps, so a crashed run resumes instead of restarting",
+    )
+    parser.add_argument("--max_checkpoints", type=int, default=1)
+    parser.add_argument(
+        "--data_work_dir",
+        default=None,
+        help="Where packed-data indices are cached (default <save_folder>/dataset-cache)",
+    )
+    parser.add_argument(
+        "--dist_timeout_min",
+        type=float,
+        default=10,
+        help="Fail if GPU ranks wait on each other longer than this (torch default is 15-30)",
+    )
+    parser.add_argument(
+        "--model_size",
+        default="7B",
+        choices=["7B", "190M", "tiny"],
+        help="190M / tiny = smoke tests with random init",
     )
     parser.add_argument("--world_size", type=int, default=4, help="Only used for dry_run")
+    return parser
+
+
+def main():
+    parser = get_parser()
     args, overrides = parser.parse_known_args()
 
     if args.cmd in ("dry_run", "prep_data"):
         prepare_cli_environment()
-    elif os.environ.get("UVA_CPU_TEST"):  # CPU-only smoke test of the code path (no GPU)
-        prepare_training_environment(backend="gloo")
     else:
-        prepare_training_environment()
+        timeout = timedelta(minutes=args.dist_timeout_min)
+        if os.environ.get("UVA_CPU_TEST"):  # CPU-only test of the code path (no GPU)
+            prepare_training_environment(backend="gloo", timeout=timeout)
+        else:
+            prepare_training_environment(timeout=timeout)
 
     config = build_config(args, overrides)
     if get_local_rank() == 0:

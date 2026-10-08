@@ -10,6 +10,9 @@ Base model `allenai/OLMo-2-1124-7B`, 5k conversations from `allenai/tulu-3-sft-m
 | `preflight.sh` | Portal checks before using GPUs |
 | `smoke_test.sbatch` | 2-GPU tiny-model test of the whole stack |
 | `download_on_portal.sh` | Fallback downloads if compute nodes are offline |
+| `run_7b.sh` | Portal: CPU tests then submit 7B fit check + SFT |
+| `local_test.sh` | CPU end-to-end pipeline test (tiny model) |
+| `run_with_watchdog.sh` | Kills a run whose log goes silent |
 | `env.sh` | Paths (all under `/bigtemp/$USER/olmo`), caches, venv activation |
 | `setup_env.sh` | One-time: uv venv with torch (CUDA wheels) + OLMo-core |
 | `00_prepare.sbatch` | CPU job: download HF model → convert to OLMo-core → tokenize SFT data |
@@ -47,6 +50,18 @@ jid=$(sbatch --parsable uva/00_prepare.sbatch)
 fit=$(sbatch --parsable --dependency=afterok:$jid --export=ALL,STEPS=5 uva/01_sft.sbatch)
 sbatch --dependency=afterok:$fit uva/01_sft.sbatch
 ```
+
+## Safety: not holding GPUs for nothing
+
+- **`run_7b.sh`** (portal) runs `local_test.sh` + checks on the real inputs on CPU, and only then submits the GPU jobs.
+- **`local_test.sh`** is a CPU-only end-to-end test (~3-5 min) with a tiny model: checkpoint load, data packing, fail-fast on bad input,
+  checkpoint save, resume after interruption, and the watchdog killing a hung run.
+- **`01_sft.sbatch` prechecks** fail in seconds, before training starts, if the checkpoint, the data or CUDA is missing,
+  or if data packing fails.
+- **Watchdog** (`run_with_watchdog.sh`) kills the run if its log is silent for `STALL_MIN` (default 12) minutes.
+- **Distributed timeout** is 10 min (was 15) so a stuck GPU rank errors out sooner.
+- **Checkpoints**: `CKPT_EVERY=N` saves an overwritten checkpoint every N steps plus a final one (7B ≈ 88 GB each).
+  Resubmitting with the same `RUN_NAME` **resumes** from the latest checkpoint instead of restarting.
 
 ## What "success" looks like
 

@@ -32,5 +32,9 @@ if [ ! -f "$SFT_DATA/token_ids_part_0000.npy" ]; then
     python uva/prep_sft_data.py --out "$SFT_DATA" --num_examples "${NUM_EXAMPLES:-5000}"
 fi
 
+# 4. Pack the SFT data into 4096-token instances once, on CPU, so GPU jobs only reuse the cache.
+python uva/sft_olmo2_7b_uva.py prep_data --checkpoint=none --dataset_path="$SFT_DATA" \
+    --save_folder="$RUNS_DIR/prep" --data_work_dir="$OLMO_ROOT/dataset-cache" --seq_len=4096
+
 ls -la "$OLMO_CKPT" "$SFT_DATA"
 echo "done=$(date)"
