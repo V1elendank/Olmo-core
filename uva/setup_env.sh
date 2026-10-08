@@ -4,8 +4,9 @@
 # Uses uv (installed to ~/.local/bin if missing) and puts the venv + caches on /bigtemp.
 #
 # TORCH_CUDA picks the PyTorch wheel flavor. The default PyPI torch wheel targets CUDA 13
-# (needs NVIDIA driver >= 580). cu128 needs driver >= 570, cu126 needs >= 560.
-# Check the driver on a GPU node with:  srun -p gpu --gres=gpu:1 -t 5 nvidia-smi
+# (needs NVIDIA driver >= 580), so we use cu128 wheels, which run on any driver >= 525 via CUDA
+# minor-version compatibility. 01_sft.sbatch prints the driver version and fails fast if CUDA
+# isn't usable; if so, rerun with TORCH_CUDA=cu126.
 set -euo pipefail
 TORCH_CUDA="${TORCH_CUDA:-cu128}"
 

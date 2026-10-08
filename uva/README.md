@@ -15,14 +15,21 @@ Base model `allenai/OLMo-2-1124-7B`, 5k conversations from `allenai/tulu-3-sft-m
 
 ## Run it
 
+From your Mac, one command does everything below (push branch, clone on cluster, setup, submit):
+
+```bash
+cd ~/Desktop/project/OLMo-core
+bash uva/launch_from_mac.sh <computing-id>          # launch
+bash uva/launch_from_mac.sh <computing-id> status   # later: queue + copy logs to uva/logs/remote/
+```
+
+Or by hand on the cluster:
+
 ```bash
 ssh <computing-id>@portal.cs.virginia.edu
 mkdir -p /bigtemp/$USER && cd /bigtemp/$USER
 git clone <your fork URL> OLMo-core && cd OLMo-core && git checkout uva-cs-finetune
 mkdir -p uva/logs
-
-# check the GPU driver version first; pick TORCH_CUDA accordingly (cu128 needs driver >= 570)
-srun -p gpu --gres=gpu:1 --constraint=a100_80gb -t 00:05:00 nvidia-smi
 
 TORCH_CUDA=cu128 bash uva/setup_env.sh           # ~5-10 min, on the portal node
 jid=$(sbatch --parsable uva/00_prepare.sbatch)   # ~1-2 h (download + convert + tokenize)
