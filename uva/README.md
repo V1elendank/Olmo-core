@@ -1,3 +1,5 @@
+> **Archived feasibility test.** For new fine-tuning runs use [`finetune/`](../finetune/README.md): one YAML per run, any OLMo 2/3 model (HF Hub, your own upload, or OLMo-core checkpoints), chat / prompt-response / text data, and an HTML control panel.
+
 # OLMo-2 7B fine-tuning on the UVA CS Slurm cluster
 
 Feasibility test: can a short OLMo-core SFT of a 7B model run on department GPUs?

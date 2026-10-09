@@ -1,0 +1,2 @@
+{"messages": [{"role": "system", "content": "You are a concise assistant."}, {"role": "user", "content": "What is FSDP?"}, {"role": "assistant", "content": "Fully Sharded Data Parallel: each GPU holds a shard of the parameters, gradients and optimizer state."}]}
+{"messages": [{"role": "user", "content": "Name a UVA CS GPU node with H100s."}, {"role": "assistant", "content": "serval06 (2x H100 NVL)."}, {"role": "user", "content": "How much memory per GPU?"}, {"role": "assistant", "content": "About 94 GB."}]}

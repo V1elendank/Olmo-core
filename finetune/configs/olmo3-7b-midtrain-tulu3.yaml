@@ -1,0 +1,26 @@
+# OLMo 3 7B after stage-2 midtraining (step 47684, 8k context): the checkpoint AI2 started the
+# OLMo 3 instruct/think SFT from. Only the model weights (~29 GB) are copied from AI2's server
+# once, into $OLMO_ROOT/models/. Same budget as the OLMo-2 feasibility run.
+name: olmo3-7b-midtrain-tulu3
+notes: OLMo 3 7B midtrain checkpoint + 5k Tulu 3 SFT conversations, 30 steps
+model:
+  source: olmo_core
+  path: https://olmo-checkpoints.org/ai2-llm/Olmo-3-1025-7B/stage2/step47684
+  arch: olmo3_7b
+  key: Olmo-3-1025-7B-stage2-step47684
+tokenizer: allenai/Olmo-3-7B-Instruct-SFT     # OLMo 3 chat template (<|im_start|> ... <|im_end|>)
+data:
+  - name: tulu3
+    source: allenai/tulu-3-sft-mixture
+    format: chat
+    num_examples: 5000
+train:
+  seq_len: 4096
+  global_batch_seqs: 32
+  steps: 30
+  lr: 2.0e-5
+slurm:
+  gpus: 2
+  constraint: h100_94gb
+  time: "02:00:00"
+  mail: dgg6b@virginia.edu

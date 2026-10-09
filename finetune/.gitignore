@@ -1,0 +1,4 @@
+dashboard/data.js
+dashboard/*.tmp
+logs/
+__pycache__/

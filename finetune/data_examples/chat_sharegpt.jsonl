@@ -1,0 +1,2 @@
+{"conversations": [{"from": "human", "value": "ShareGPT style works too."}, {"from": "gpt", "value": "Yes: from/value pairs with human/gpt roles are converted automatically."}]}
+{"conversations": [{"from": "system", "value": "Be brief."}, {"from": "human", "value": "Capital of Virginia?"}, {"from": "gpt", "value": "Richmond."}]}

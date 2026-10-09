@@ -1,0 +1,24 @@
+# Plain text (domain adaptation / continued pretraining): loss on every token, documents longer
+# than seq_len are split into pieces. Starts from the OLMo 3 7B base on the HF Hub.
+name: olmo3-7b-papers-cpt
+model:
+  source: hf
+  path: allenai/Olmo-3-1025-7B
+  arch: olmo3_7b
+tokenizer: allenai/Olmo-3-1025-7B
+data:
+  - name: papers
+    source: /bigtemp/dgg6b/datasets/papers/     # folder of .jsonl files with a "text" field
+    format: text
+train:
+  seq_len: 4096
+  global_batch_seqs: 64
+  epochs: 1
+  lr: 5.0e-5
+  warmup_fraction: 0.02
+checkpoint:
+  every: 250
+slurm:
+  gpus: 2
+  constraint: h100_94gb
+  time: "24:00:00"

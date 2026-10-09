@@ -1,0 +1,2 @@
+{"text": "Plain documents for continued pretraining. Every token is trained on."}
+{"text": "Long documents are split into seq_len pieces when the data is packed."}

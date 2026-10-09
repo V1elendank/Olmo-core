@@ -1,0 +1,35 @@
+# Your own model + your own dataset, nothing pulled from the Hugging Face API at train time.
+#  1. upload the model folder (config.json + *.safetensors + tokenizer files), e.g. from the Mac:
+#       rsync -av ~/models/my-olmo/ <id>@portal.cs.virginia.edu:/bigtemp/<id>/my_models/my-olmo/
+#  2. upload the data (.jsonl/.json/.csv/.parquet, or a folder of them):
+#       rsync -av ~/data/support.jsonl <id>@portal.cs.virginia.edu:/bigtemp/<id>/datasets/
+#  3. copy this file to finetune/configs/, edit paths, then submit.sh
+# A model fine-tuned here before can be the starting point too:
+#   model: {source: olmo_core, path: /bigtemp/<id>/olmo/runs/<earlier-run>/step30}
+name: my-olmo-support-v1
+model:
+  source: hf_local
+  path: /bigtemp/dgg6b/my_models/my-olmo
+  arch: olmo2_7b              # the architecture of your model
+tokenizer: /bigtemp/dgg6b/my_models/my-olmo   # the tokenizer saved with your model
+data:
+  - name: support
+    source: /bigtemp/dgg6b/datasets/support.jsonl
+    format: chat
+    system_prompt: "You are a helpful support assistant."
+  - name: faq
+    source: /bigtemp/dgg6b/datasets/faq.csv
+    format: prompt_response
+    prompt_column: question
+    response_column: answer
+train:
+  seq_len: 4096
+  global_batch_seqs: 32
+  epochs: 2
+  lr: 1.0e-5
+checkpoint:
+  every: 200
+slurm:
+  gpus: 2
+  constraint: h100_94gb
+  time: "12:00:00"

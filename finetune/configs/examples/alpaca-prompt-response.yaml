@@ -1,0 +1,21 @@
+# Prompt/response pairs from the Hub (Alpaca style: instruction + optional input -> output),
+# rendered with the OLMo 2 chat template; loss only on the response.
+name: olmo2-1b-alpaca
+model:
+  source: hf
+  path: allenai/OLMo-2-0425-1B
+  arch: olmo2_1b_v2
+tokenizer: allenai/OLMo-2-0425-1B-SFT
+data:
+  - name: alpaca
+    source: tatsu-lab/alpaca
+    format: prompt_response        # columns instruction / input / output are detected automatically
+train:
+  seq_len: 4096
+  global_batch_seqs: 64
+  epochs: 3
+  lr: 2.0e-5
+slurm:
+  gpus: 1                          # a 1B model fits on one GPU
+  constraint: null
+  time: "06:00:00"

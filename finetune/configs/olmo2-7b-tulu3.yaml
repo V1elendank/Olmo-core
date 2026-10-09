@@ -1,0 +1,27 @@
+# Reproduces the feasibility run (job 6701929: 30 steps, 2x H100, ~37 min incl. 2 checkpoints)
+# with the new workflow. Reuses the OLMo-2 7B checkpoint already converted on /bigtemp, so
+# nothing is downloaded. Measured: 3,673 tokens/s/GPU, 17.8 s/step, 84 GB/GPU, loss 0.82 -> 0.61.
+name: olmo2-7b-tulu3
+notes: OLMo-2 7B base + 5k Tulu 3 SFT conversations, 30 steps
+model:
+  source: olmo_core
+  path: /bigtemp/dgg6b/olmo/ckpt/OLMo-2-1124-7B   # converted from allenai/OLMo-2-1124-7B in the feasibility test
+  arch: olmo2_7b
+tokenizer: allenai/OLMo-2-1124-7B-SFT
+data:
+  - name: tulu3
+    source: allenai/tulu-3-sft-mixture
+    format: chat
+    num_examples: 5000
+train:
+  seq_len: 4096
+  global_batch_seqs: 32
+  steps: 30
+  lr: 2.0e-5
+checkpoint:
+  every: 0
+slurm:
+  gpus: 2
+  constraint: h100_94gb
+  time: "02:00:00"
+  mail: dgg6b@virginia.edu

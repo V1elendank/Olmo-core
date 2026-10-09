@@ -1,0 +1,97 @@
+# ======================================================================================
+# Fine-tuning run config: one file per run. Copy with  python finetune/ft.py new <name>
+# Then:  bash finetune/scripts/submit.sh finetune/configs/<name>.yaml
+# Every key except name/model/tokenizer/data has a default (shown here).
+# ======================================================================================
+
+name: my-run                 # run folder: $OLMO_ROOT/runs/<name>   (re-submitting the same name RESUMES)
+notes: ""                    # free text, shown in the control panel
+
+# --- base model ----------------------------------------------------------------------
+model:
+  # source: where the starting weights come from
+  #   hf         Hugging Face Hub id, downloaded + converted once      e.g. allenai/OLMo-2-1124-7B
+  #   hf_local   a Hugging Face-format folder you uploaded yourself    e.g. /bigtemp/$USER/my_models/x
+  #              (config.json + *.safetensors; must be an OLMo 2 / OLMo 3 architecture)
+  #   olmo_core  an OLMo-core checkpoint: one of your runs (runs/<name>/stepN) used in place,
+  #              or a URL such as AI2's https://olmo-checkpoints.org/... (weights copied once)
+  source: hf
+  path: allenai/OLMo-2-1124-7B
+  arch: olmo2_7b             # olmo2_1b | olmo2_7b | olmo2_13b | olmo2_32b | olmo3_7b | olmo3_32b ...
+                             # required for hf / hf_local; optional for olmo_core (read from config.json)
+  revision: main             # hf only: branch / tag / commit (AI2 publishes intermediate steps as revisions)
+  validate: true             # hf/hf_local: compare logits after conversion (needs ~2x model size in RAM)
+  # key: my-name             # optional folder name under $OLMO_ROOT/models/
+
+# --- tokenizer + chat template -------------------------------------------------------
+# HF id or local folder. Must use the dolma2 vocabulary (all OLMo 2 / OLMo 3 tokenizers do).
+# Its chat template formats chat / prompt_response data; use the matching Instruct/SFT tokenizer.
+#   OLMo 2: allenai/OLMo-2-1124-7B-SFT         OLMo 3: allenai/Olmo-3-7B-Instruct-SFT
+tokenizer: allenai/OLMo-2-1124-7B-SFT
+# chat_template: olmo3       # override: "olmo2", "olmo3" (ChatML) or a full Jinja template string
+
+# --- data: one or more datasets, mixed together ---------------------------------------
+data:
+  - name: tulu3                         # unique; shown in the control panel
+    source: allenai/tulu-3-sft-mixture  # HF dataset id, OR a local file/folder:
+                                        #   /bigtemp/$USER/datasets/mine.jsonl (.jsonl .json .csv .parquet)
+    format: chat                        # chat | prompt_response | text   (see finetune/data_examples/)
+    split: train                        # HF only
+    # subset: default                   # HF config name, if the dataset has several
+    num_examples: 5000                  # null = all rows; otherwise a random sample (seeded)
+    seed: 0
+    # Column names are auto-detected; set them if your columns are named differently:
+    # messages_column: messages         # chat:            messages / conversations / ...
+    # prompt_column: instruction        # prompt_response: prompt / instruction / question / ...
+    # input_column: input               #                  optional extra context appended to the prompt
+    # response_column: output           #                  response / output / answer / completion ...
+    # text_column: text                 # text:            text / content / document ...
+    # system_prompt: "You are ..."      # added to conversations that have no system message
+    too_long: skip                      # chat/prompt_response longer than seq_len: skip | truncate
+                                        # (text documents are split into seq_len pieces instead)
+
+# --- training ------------------------------------------------------------------------
+train:
+  seq_len: 4096              # tokens per sequence (power of 2). OLMo 2: up to 4096, OLMo 3: up to 8192
+  global_batch_seqs: 32      # sequences per optimizer step (32 x 4096 = 131k tokens)
+  microbatch_seqs: 1         # sequences per GPU per forward pass (raise only if memory allows)
+  steps: 30                  # optimizer steps ...
+  # epochs: 2                # ... OR passes over the data (set exactly one of steps / epochs)
+  lr: 2.0e-5                 # peak LR; linear warmup then linear decay to 0
+  warmup_fraction: 0.1
+  weight_decay: 0.0
+  betas: [0.9, 0.95]
+  max_grad_norm: 1.0
+  attn_backend: torch        # torch (works everywhere) | flash_2 / flash_3 (if installed; also stops
+                             # attention across packed examples)
+  activation_checkpointing: ffn   # ffn | full (less memory, ~25% slower) | none (fast, small models only)
+  optim_foreach: false       # true = faster AdamW but +30-45 GB/GPU for 7B: OOM on 2x H100 (job 6701776)
+  compile: false
+  seed: 33333
+  dist_timeout_min: 10       # a stuck rank fails the job after this long instead of 30 min
+
+# --- checkpoints (7B with optimizer state: ~88 GB each, ~13 min to write on /bigtemp) ---
+checkpoint:
+  every: 0                   # extra checkpoint every N steps for resuming after a crash/timeout (0 = off)
+                             # rule of thumb: about once an hour of training
+  final: true                # checkpoint at the end (needed for the HF export)
+  keep: 1                    # checkpoints kept after the run finishes
+
+# --- Slurm resources (used by submit.sh) ------------------------------------------------
+slurm:
+  partition: gpu
+  gpus: 2                    # one node; 7B full fine-tuning needs >= 2x 80-94 GB GPUs
+  constraint: h100_94gb      # h100_94gb (serval06-09, 2 GPUs) | a100_80gb (cheetah04, 4 GPUs) | null
+  cpus: 16
+  mem: 240000                # MiB of host RAM
+  time: "04:00:00"           # wall time of the training job (gpu partition max: 4 days)
+  mail: null                 # e.g. <id>@virginia.edu for END/FAIL emails (must be @virginia.edu)
+  fit_check_steps: 5         # short GPU run first; the real job only starts if it passes (0 = skip)
+  stall_min: 12              # watchdog: kill the job if nothing is logged/written for this long
+
+# --- export ------------------------------------------------------------------------
+export:
+  hf: true                   # convert the final checkpoint to Hugging Face format (runs/<name>/hf-stepN)
+  dtype: bfloat16
+  validate: false
+  # max_seq_len: 4096        # HF max_position_embeddings (default: 4096 OLMo 2, 8192 OLMo 3)
