@@ -1,0 +1,49 @@
+name: cyber-olmo3-7b-sft-v2
+notes: CyberLLMInstruct v2 (~4143 cleaned instruction-response pairs), continued SFT on Olmo-3-7B-Instruct-SFT
+
+model:
+  source: hf
+  path: allenai/Olmo-3-7B-Instruct-SFT
+  arch: olmo3_7b
+  validate: true
+
+tokenizer: allenai/Olmo-3-7B-Instruct-SFT
+
+data:
+  - name: cyberllm-v2
+    source: /bigtemp/dgg6b/datasets/cyber_sft_v2.jsonl
+    format: prompt_response
+    num_examples: null
+    too_long: skip
+
+train:
+  seq_len: 4096
+  global_batch_seqs: 32
+  microbatch_seqs: 1
+  epochs: 3
+  lr: 1.0e-5
+  warmup_fraction: 0.1
+  weight_decay: 0.0
+  attn_backend: torch
+  activation_checkpointing: ffn
+  optim_foreach: false
+
+checkpoint:
+  every: 0
+  final: true
+  keep: 1
+
+slurm:
+  partition: gpu
+  gpus: 4
+  constraint: a100_80gb
+  cpus: 16
+  mem: 240000
+  time: "04:00:00"
+  mail: dgg6b@virginia.edu
+  fit_check_steps: 5
+  stall_min: 12
+
+export:
+  hf: true
+  dtype: bfloat16

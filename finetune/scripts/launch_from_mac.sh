@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Drive the UVA CS cluster from your Mac (run from anywhere in the repo). You type your CS password
-# (and Duo) once; the SSH connection is then reused for 2 hours.
+# (and Duo) yourself. Most commands reuse the connection for 2 hours; the live panel owns its tunnel.
 #
 #   bash finetune/scripts/launch_from_mac.sh <id> setup                 push code, update the cluster copy,
 #                                                                       build the venv if missing, preflight
@@ -22,6 +22,10 @@ BRANCH="${BRANCH:-uva-cs-finetune}"
 REMOTE_REPO="/bigtemp/$ID/OLMo-core"
 REMOTE_ROOT="/bigtemp/$ID/olmo"
 PORT="${PORT:-8765}"
+[[ "$ID" =~ ^[a-z][a-z0-9]*$ ]] || { echo "invalid UVA computing ID"; exit 2; }
+[[ "$PORT" =~ ^[0-9]{1,5}$ ]] && [ "$((10#$PORT))" -ge 1024 ] && [ "$((10#$PORT))" -le 65535 ] \
+    || { echo "PORT must be a number between 1024 and 65535"; exit 2; }
+PORT="$((10#$PORT))"
 
 cd "$(dirname "$0")/../.."
 mkdir -p ~/.ssh finetune/logs
@@ -85,11 +89,15 @@ EOF
     ;;
 
 panel)
-    echo ">>> starting the live control panel on the portal; open http://localhost:$PORT  (Ctrl-C to stop)"
-    (sleep 6; command -v open >/dev/null && open "http://localhost:$PORT") &
-    # -t: Ctrl-C reaches the server. Same SSH session, so the tunnel hits the same portal host.
-    ssh "${SSH_OPTS[@]}" -t -L "$PORT:localhost:$PORT" "$HOST" \
-        "bash -lc 'cd $REMOTE_REPO && PORT=$PORT bash finetune/scripts/panel.sh'"
+    echo ">>> starting the live control panel on the portal (Ctrl-C to stop)"
+    echo ">>> after authentication and the server's ready message, open http://localhost:$PORT/launch.html"
+    echo ">>> panel uses the code already on the cluster; it does not sync local changes"
+    # A dedicated connection closes its forward with the panel instead of leaving it on the
+    # two-hour control master. Fail before starting a remote panel if the local port is occupied.
+    ssh -S none -o ControlMaster=no -o ControlPersist=no -o ExitOnForwardFailure=yes \
+        -o ServerAliveInterval=60 -t -L "127.0.0.1:$PORT:127.0.0.1:$PORT" "$HOST" \
+        "bash -lc 'cd $REMOTE_REPO && test -f finetune/ftlib/web.py && PORT=$PORT bash finetune/scripts/panel.sh'" \
+        || { rc=$?; echo ">>> panel stopped with an error; check SSH, port $PORT, and the cluster code/environment above"; exit "$rc"; }
     ;;
 
 logs)

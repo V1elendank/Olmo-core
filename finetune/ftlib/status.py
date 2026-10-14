@@ -346,9 +346,11 @@ def datasets(root: Path) -> List[Dict[str, Any]]:
 
 
 def models(root: Path) -> List[Dict[str, Any]]:
+    from .models import is_prepared
+
     out = []
     for d in sorted((root / "models").glob("*")):
-        if not (d / "model_and_optim" / ".metadata").is_file():
+        if not is_prepared(d):
             continue
         meta = _json(d / "config.json") or {}
         m = meta.get("model", {})
@@ -370,11 +372,12 @@ def configs() -> List[Dict[str, Any]]:
     import sys
 
     sys.path.insert(0, str(HERE))
-    from ftlib.config import load_config
+    from ftlib.config import config_paths, load_config
+    from ftlib.models import is_prepared
 
     out = []
-    for p in sorted((HERE / "configs").glob("*.yaml")):
-        item: Dict[str, Any] = {"file": p.name, "text": p.read_text()}
+    for p in config_paths():
+        item: Dict[str, Any] = {"file": str(p), "path": str(p), "text": p.read_text()}
         try:
             cfg = load_config(p)
             item.update(
@@ -382,7 +385,7 @@ def configs() -> List[Dict[str, Any]]:
                 model_dir=str(cfg.model_dir),
                 data_dir=str(cfg.data_dir),
                 run_dir=str(cfg.run_dir()),
-                model_ready=(cfg.model_dir / "model_and_optim" / ".metadata").is_file(),
+                model_ready=is_prepared(cfg.model_dir),
                 data_ready=(cfg.data_dir / "manifest.json").is_file(),
                 packed=(cfg.data_dir / "pack.json").is_file(),
             )
@@ -436,27 +439,33 @@ def serve(port: int, interval: int = 60) -> None:
     """Serve finetune/dashboard on 127.0.0.1:PORT, refreshing data.js every `interval` seconds.
     From your laptop:  ssh -L PORT:localhost:PORT <you>@portal.cs.virginia.edu  then open
     http://localhost:PORT"""
-    import functools
-    import http.server
+    from .web import Application, make_server
+
+    srv = make_server(Application(_root()), port, DASH)
+    port = srv.server_port
+    stopped = threading.Event()
 
     def loop():
-        while True:
+        while not stopped.is_set():
             try:
-                write(collect())
+                snapshot = collect()
+                if not stopped.is_set():
+                    write(snapshot)
             except Exception as e:  # noqa: BLE001
                 log.warning(f"status refresh failed: {e}")
-            time.sleep(interval)
+            stopped.wait(interval)
 
-    write(collect())
+    # Slurm status commands can be slow; uploads must not wait for the first snapshot.
     threading.Thread(target=loop, daemon=True).start()
-    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(DASH))
-    http.server.SimpleHTTPRequestHandler.log_message = lambda *a, **k: None  # type: ignore
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
     print(
         f"control panel on http://localhost:{port}  (data refreshed every {interval}s; Ctrl-C to stop)"
     )
     print(f"from your laptop:  ssh -L {port}:localhost:{port} {_user()}@portal.cs.virginia.edu")
+    print(f"upload models/datasets and start a run: http://localhost:{port}/launch.html")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
         pass
+    finally:
+        stopped.set()
+        srv.server_close()

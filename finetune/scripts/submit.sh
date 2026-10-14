@@ -49,7 +49,7 @@ if [ "$TEST" = 1 ]; then
 fi
 
 MODEL_READY=0 DATA_READY=0
-[ -f "$FT_MODEL_DIR/model_and_optim/.metadata" ] && MODEL_READY=1
+[ -f "$FT_MODEL_DIR/model_and_optim/.metadata" ] && [ ! -e "$FT_MODEL_DIR/.ft-preparing" ] && MODEL_READY=1
 [ -f "$FT_DATA_DIR/manifest.json" ] && [ -f "$FT_DATA_DIR/pack.json" ] && DATA_READY=1
 
 echo "== 3. training config builds (dry run, no GPU)"
@@ -82,7 +82,7 @@ submit() { # submit STAGE NAME [sbatch args...] -- SCRIPT ARGS
         return
     fi
     local id
-    id=$(sbatch --parsable "${COMMON[@]}" "$name" "${MAIL[@]}" "${dep[@]}" "$@")
+    id=$(sbatch --parsable "${COMMON[@]}" "$name" ${MAIL[@]+"${MAIL[@]}"} ${dep[@]+"${dep[@]}"} "$@")
     printf '{"time": "%s", "stage": "%s", "job_id": "%s", "after": "%s"}\n' \
         "$(date '+%Y-%m-%d %H:%M:%S')" "$stage" "$id" "$LAST" >>"$FT_RUN_DIR/jobs.jsonl"
     echo "   $stage: job $id${LAST:+ (after $LAST)}"

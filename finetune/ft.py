@@ -28,7 +28,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from ftlib.config import ConfigError, load_config, shell_exports  # noqa: E402
+from ftlib.config import ConfigError, config_paths, load_config, shell_exports  # noqa: E402
 
 log = logging.getLogger("ft")
 
@@ -196,7 +196,7 @@ def cmd_status(a):
 
 
 def cmd_list(a):
-    for p in sorted((HERE / "configs").glob("*.yaml")):
+    for p in config_paths():
         if p.name.startswith("_"):
             continue
         try:
@@ -207,7 +207,7 @@ def cmd_list(a):
                 for c, k in (("M", "model_ready"), ("D", "data_ready"), ("P", "packed"))
             )
             print(
-                f"{flags}  {p.name:40s} {s['run_state']:12s} step {s['step'] or '-':>6}  {','.join(s['checkpoints'])}"
+                f"{flags}  {cfg.name:40s} {s['run_state']:12s} step {s['step'] or '-':>6}  {','.join(s['checkpoints'])}"
             )
         except ConfigError as e:
             print(f"!!!  {p.name:40s} {str(e).splitlines()[0]}")

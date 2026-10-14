@@ -34,6 +34,7 @@ fail() { echo "PRECHECK FAILED: $*  (no GPU time used for training)"; exit 2; }
 echo "== prechecks"
 [ "$NGPU" = "$FT_GPUS" ] || fail "job has $NGPU GPUs but the config says slurm.gpus=$FT_GPUS"
 [ -f "$FT_MODEL_DIR/model_and_optim/.metadata" ] || fail "base model not prepared: $FT_MODEL_DIR"
+[ ! -e "$FT_MODEL_DIR/.ft-preparing" ] || fail "base-model conversion or validation is incomplete"
 [ -f "$FT_DATA_DIR/manifest.json" ] || fail "data not prepared: $FT_DATA_DIR"
 python -c "import torch; assert torch.cuda.is_available() and torch.cuda.device_count() == $NGPU; print('   torch', torch.__version__, 'cuda', torch.version.cuda)" \
     || fail "CUDA not usable (driver vs torch wheel mismatch?)"

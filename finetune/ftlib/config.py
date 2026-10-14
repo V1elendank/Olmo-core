@@ -52,6 +52,51 @@ def _slug(s: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", s).strip("_")[-80:]
 
 
+def local_revision(source: str) -> str:
+    """Fingerprint local file versions without rereading multi-GB weights per Slurm stage.
+
+    Browser uploads have unique immutable paths and SHA-256 manifests. For external local
+    paths, inode/size/mtime/ctime changes invalidate caches when a file is replaced or edited.
+    This metadata fingerprint is not a cryptographic integrity check.
+    """
+    path = Path(source).expanduser()
+    if not path.exists():
+        return ""
+    files = (
+        [path]
+        if path.is_file()
+        else sorted(
+            p
+            for p in path.rglob("*")
+            if p.is_file() and not any(part.startswith(".") for part in p.relative_to(path).parts)
+        )
+    )
+    records = []
+    for p in files:
+        st = p.stat()
+        records.append(
+            (
+                str(p.relative_to(path)) if p != path else p.name,
+                st.st_ino,
+                st.st_size,
+                st.st_mtime_ns,
+                st.st_ctime_ns,
+            )
+        )
+    return hashlib.sha256(json.dumps(records).encode()).hexdigest()[:16]
+
+
+def config_paths() -> List[Path]:
+    """Include browser-created runs alongside the checked-in YAML configs."""
+    here = Path(__file__).resolve().parents[1]
+    root = Path(os.environ.get("OLMO_ROOT") or f"/bigtemp/{os.environ.get('USER', 'user')}/olmo")
+    return [
+        p.resolve()
+        for p in sorted((here / "configs").glob("*.yaml"))
+        + sorted((root / "web_runs").glob("*/run.yaml"))
+    ]
+
+
 @dataclass
 class ModelCfg:
     source: str  # hf | hf_local | olmo_core
@@ -161,6 +206,9 @@ class RunConfig:
 
     @property
     def model_key(self) -> str:
+        if self.model.source == "hf_local":
+            base = self.model.key or _slug(self.model.path)
+            return f"{base}-{self.model.arch}-{local_revision(self.model.path)}"
         if self.model.key:
             return self.model.key
         rev = "" if self.model.revision in ("main", None) else f"@{self.model.revision}"
@@ -183,6 +231,8 @@ class RunConfig:
                 "tmpl": self.chat_template,
                 "seq": self.train.seq_len,
                 "data": [dataclasses.asdict(d) for d in self.data],
+                "local_tokenizer_version": local_revision(self.tokenizer),
+                "local_data_versions": [local_revision(d.source) for d in self.data],
             },
             sort_keys=True,
         )
@@ -281,7 +331,9 @@ def validate(cfg: RunConfig) -> None:
         errs.append("train.seq_len must be a power of two (e.g. 2048, 4096, 8192)")
     if (t.steps is None) == (t.epochs is None):
         errs.append("train: set exactly one of steps / epochs")
-    if t.global_batch_seqs % (t.microbatch_seqs * max(cfg.slurm.gpus, 1)):
+    if t.microbatch_seqs <= 0 or cfg.slurm.gpus <= 0 or t.global_batch_seqs <= 0:
+        errs.append("batch sizes and GPU count must be positive")
+    elif t.global_batch_seqs % (t.microbatch_seqs * cfg.slurm.gpus):
         errs.append("train.global_batch_seqs must be divisible by microbatch_seqs * slurm.gpus")
     if t.attn_backend not in ("torch", "flash_2", "flash_3"):
         errs.append("train.attn_backend must be torch, flash_2 or flash_3")

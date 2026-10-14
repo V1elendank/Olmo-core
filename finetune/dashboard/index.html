@@ -119,6 +119,7 @@ select { font: inherit; font-size: 12.5px; padding: 3px 6px; border: 1px solid v
       <span class="meta" id="meta">loading…</span>
       <span class="spacer"></span>
       <span class="meta" id="fresh"></span>
+      <a class="btn" href="launch.html">New fine-tune</a>
       <button class="btn" id="reload" title="Reload data.js">Refresh</button>
       <button class="btn" id="theme" title="Toggle light/dark">Theme</button>
     </div>
@@ -156,6 +157,7 @@ function pill(state) {
   return `<span class="pill ${cls}">${esc(state || "–")}</span>`;
 }
 function last(arr) { if (!arr) return null; for (let i = arr.length - 1; i >= 0; i--) if (arr[i] != null) return arr[i]; return null; }
+const shellQuote = text => "'" + String(text).replace(/'/g, "'\\''") + "'";
 function copyBtn(text) { return `<div class="cmd"><code>${esc(text)}</code><button class="btn" data-copy="${esc(text)}">Copy</button></div>`; }
 
 /* ------------------------------------------------------------------ data loading */
@@ -399,7 +401,7 @@ function vModels() {
       ${c.error ? `<td colspan="3"><span class="pill p-bad">invalid</span> <span class="small">${esc(c.error.split("\n").slice(0, 3).join(" "))}</span></td>`
         : `<td>${c.model_ready ? pill("ready") : pill("to prepare")}</td><td>${c.data_ready ? pill("ready") : pill("to prepare")}</td><td>${c.packed ? pill("ready") : pill("–")}</td>`}
       <td>${c.file === S.cfg ? "▸" : ""}</td></tr>`).join("")}</table></div>
-    ${S.cfg ? `<h3>${esc(S.cfg)}</h3>${copyBtn("bash finetune/scripts/submit.sh finetune/configs/" + S.cfg)}<pre>${esc((cs.find(c => c.file === S.cfg) || {}).text || "")}</pre>` : ""}
+    ${S.cfg ? `<h3>${esc(S.cfg)}</h3>${copyBtn("bash finetune/scripts/submit.sh " + shellQuote((cs.find(c => c.file === S.cfg) || {}).path || "finetune/configs/" + S.cfg))}<pre>${esc((cs.find(c => c.file === S.cfg) || {}).text || "")}</pre>` : ""}
     <div class="faint small" style="margin-top:8px">New run: <span class="mono">python finetune/ft.py new &lt;name&gt;</span> creates configs/&lt;name&gt;.yaml from the commented template.</div></div>`;
   return h;
 }

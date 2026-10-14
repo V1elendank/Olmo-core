@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>New fine-tune · OLMo</title>
+<link rel="stylesheet" href="launch.css">
+<script defer src="launch.js"></script>
+</head>
+<body>
+<header><div class="wrap top"><a class="brand" href="index.html">OLMo <span>Fine-tuning</span></a><a href="index.html">Training dashboard ↗</a></div></header>
+<main class="wrap">
+<div class="intro"><div><p class="eyebrow">YOUR MODELS. YOUR DATA.</p><h1>Start a fine-tune</h1><p>Upload each input once, choose your settings, and follow the run.</p></div><span class="badge">GPU fit-check always on</span></div>
+<div id="connection" class="notice" role="status">Connecting to your training server…</div>
+<div class="grid uploads">
+<section class="card"><div class="section-title"><span class="number">1</span><h2>Model</h2></div><p>Choose a Hugging Face OLMo folder with weights, configuration, and tokenizer files.</p>
+<label for="model-name">Upload name</label><input id="model-name" placeholder="OLMo 3 7B Think" maxlength="120">
+<label class="file-label" for="model-files">Choose model folder<input id="model-files" type="file" webkitdirectory multiple></label>
+<p class="small" id="model-files-info">No folder selected</p>
+<div class="row"><button id="model-upload" type="button" disabled>Upload model</button><button class="secondary" id="model-pause" type="button" hidden>Pause</button></div>
+<progress id="model-progress" max="100" value="0" aria-label="Model upload progress" hidden></progress><p class="small status" id="model-status" role="status"></p>
+</section>
+<section class="card"><div class="section-title"><span class="number">2</span><h2>Dataset</h2></div><p>Choose one or more files of the same type: JSONL, JSON, CSV, Parquet, or Arrow.</p>
+<label for="dataset-name">Upload name</label><input id="dataset-name" placeholder="My training conversations" maxlength="120">
+<label class="file-label" for="dataset-files">Choose dataset files<input id="dataset-files" type="file" accept=".jsonl,.json,.csv,.parquet,.arrow" multiple></label>
+<p class="small" id="dataset-files-info">No files selected</p>
+<div class="row"><button id="dataset-upload" type="button" disabled>Upload dataset</button><button class="secondary" id="dataset-pause" type="button" hidden>Pause</button></div>
+<progress id="dataset-progress" max="100" value="0" aria-label="Dataset upload progress" hidden></progress><p class="small status" id="dataset-status" role="status"></p>
+</section></div>
+<section class="card library"><div class="section-title"><h2>Your uploads</h2><button class="secondary compact" id="refresh-assets">Refresh</button></div><p class="small">Uploads are stored independently. Re-uploading creates a new version. Remove only inputs that have not been used by a run.</p><div id="assets" class="asset-list"><p class="small">No uploads yet.</p></div><p class="small error" id="asset-error" role="alert"></p></section>
+<section class="card"><div class="section-title"><span class="number">3</span><h2>Configure and start</h2></div>
+<form id="run-form">
+<div class="grid fields"><div><label for="run-name">Run name</label><input id="run-name" required pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,79}" maxlength="80" placeholder="olmo-mydata-v1"></div>
+<div><label for="model-select">Model upload</label><select id="model-select" required><option value="">Upload a model first</option></select></div>
+<div><label for="dataset-select">Dataset upload</label><select id="dataset-select" required><option value="">Upload a dataset first</option></select></div>
+<div><label for="arch">Model architecture</label><select id="arch" required></select><p class="small">Must match your model's family and size.</p></div>
+<div><label for="format">Dataset format</label><select id="format"><option value="chat">Chat messages</option><option value="prompt_response">Prompt and response</option><option value="text">Plain text</option></select></div>
+<div><label for="chat-template">Conversation template</label><select id="chat-template"><option value="">Use uploaded tokenizer</option><option value="olmo3">OLMo 3 / ChatML</option><option value="olmo2">OLMo 2 / Tulu</option></select></div>
+</div>
+<details><summary>Training settings</summary><p class="small">This workflow performs full-model fine-tuning. The fit-check tests memory before the main run. A long run must fit within the selected time limit; automatic resubmission is not enabled.</p>
+<div class="grid fields">
+<div><label for="steps">Training steps</label><input id="steps" type="number" value="100" min="1" max="1000000" required></div>
+<div><label for="seq-len">Sequence length</label><select id="seq-len"><option>1024</option><option>2048</option><option>4096</option><option>8192</option></select></div>
+<div><label for="batch">Sequences per optimizer step</label><input id="batch" type="number" value="4" min="1" max="4096" required></div>
+<div><label for="lr">Learning rate</label><input id="lr" type="number" value="0.00002" step="any" min="0.000000001" max="0.01" required></div>
+<div><label for="constraint">GPU type</label><select id="constraint"><option value="h100_94gb">H100 NVL · 94 GB</option><option value="a100_80gb">A100 · 80 GB</option><option value="a100_40gb">A100 · 40 GB</option><option value="a40">A40 · 48 GB</option></select></div>
+<div><label for="gpus">Number of GPUs</label><select id="gpus"><option>2</option><option>1</option><option>4</option></select></div>
+<div><label for="hours">Maximum training hours</label><input id="hours" type="number" value="4" min="1" max="96" required></div>
+</div></details>
+<details><summary>Dataset columns (optional)</summary><p class="small">Leave blank to detect standard column names automatically.</p><div class="grid fields">
+<div><label for="messages-column">Messages column</label><input id="messages-column" maxlength="120" placeholder="messages"></div>
+<div><label for="prompt-column">Prompt column</label><input id="prompt-column" maxlength="120" placeholder="prompt"></div>
+<div><label for="response-column">Response column</label><input id="response-column" maxlength="120" placeholder="response"></div>
+<div><label for="text-column">Text column</label><input id="text-column" maxlength="120" placeholder="text"></div>
+</div></details>
+<div class="pipeline"><span>Prepare inputs</span><b>→</b><span>GPU fit-check</span><b>→</b><span>Fine-tune</span><b>→</b><span>Export model</span></div>
+<div class="start-row"><button id="start" type="submit" disabled>Start fine-tuning</button><span class="small" id="start-help">Complete both uploads to enable Start.</span></div><p id="run-error" class="error" role="alert"></p>
+</form></section>
+<section class="card"><div class="section-title"><h2>Launch activity</h2><a href="index.html">View training metrics ↗</a></div><div id="launches"><p class="small">Your submitted runs will appear here.</p></div></section>
+<p class="footnote">Files stay on the server hosting this panel. On UVA, /bigtemp is scratch storage; save completed models to durable storage.</p>
+</main>
+<dialog id="remove-dialog"><h2>Remove this upload?</h2><p id="remove-text"></p><p class="small">This deletes the uploaded files. Inputs referenced by a run cannot be removed here.</p><div class="row"><button class="secondary" id="remove-cancel">Keep upload</button><button class="danger" id="remove-confirm">Remove upload</button></div></dialog>
+</body></html>

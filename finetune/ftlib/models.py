@@ -12,6 +12,7 @@ Sources (model.source in the YAML):
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 import os
@@ -49,7 +50,10 @@ def _arch_factory(arch: str):
 
 
 def is_prepared(path: Path) -> bool:
-    return (path / "model_and_optim" / ".metadata").is_file()
+    """A converter's checkpoint is usable only after conversion and validation finish."""
+    return (path / "model_and_optim" / ".metadata").is_file() and not (
+        path / ".ft-preparing"
+    ).exists()
 
 
 def read_model_meta(model_dir: Path) -> Dict[str, Any]:
@@ -98,6 +102,25 @@ def _set_attn_backend(d: Any, backend: str) -> None:
 
 
 def prepare_model(cfg: RunConfig, force: bool = False) -> Path:
+    """Serialize shared-model preparation and retain a failure marker until validation passes."""
+    out = cfg.model_dir
+    if cfg.model.source == "olmo_core" and not cfg.model.path.startswith(("http://", "https://")):
+        return _prepare_model(cfg, force)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with (out.parent / f".{out.name}.prepare.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if is_prepared(out) and not force:
+            log.info(f"Model already prepared: {out}")
+            return out
+        out.mkdir(parents=True, exist_ok=True)
+        marker = out / ".ft-preparing"
+        marker.write_text("Conversion or validation has not completed successfully.\n")
+        result = _prepare_model(cfg, force=True)
+        marker.unlink()
+        return result
+
+
+def _prepare_model(cfg: RunConfig, force: bool = False) -> Path:
     m, out = cfg.model, cfg.model_dir
     if is_prepared(out) and not force:
         log.info(f"Model already prepared: {out}")

@@ -13,3 +13,9 @@ length histograms, decoded examples with the trained-on tokens highlighted) · M
 Cluster (GPU nodes, queue, 7-day history).
 
 `data.js` is generated and not committed.
+
+**New fine-tune** opens `launch.html`: independently upload a model folder and dataset files,
+select the completed inputs, configure training, and click Start. It uses a loopback-only API
+served by `ft.py status --serve`; static snapshots remain read-only. Uploads are resumable and
+versioned, and unused uploads can be removed. Every web launch retains the GPU fit-check gate.
+See the parent README for accepted files, storage locations, and testing instructions.
